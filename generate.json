@@ -1,0 +1,52 @@
+{
+  "kits": [
+    {
+      "kitId": "kit1",
+      "kitName": "LW-AMGF1 VG Kit 1",
+      "vgStart": 1,
+      "count": 25,
+      "hostPrefix": "vg-",
+      "hostSuffix": ".local"
+    },
+    {
+      "kitId": "kit2",
+      "kitName": "LW-AMGF1 VG Kit 2",
+      "vgStart": 1,
+      "count": 25,
+      "hostPrefix": "vg-",
+      "hostSuffix": ".local"
+    },
+       {
+      "kitId": "kit3",
+      "kitName": "LW-AMGF1 VG Kit 3",
+      "vgStart": 1,
+      "count": 25,
+      "hostPrefix": "vg-",
+      "hostSuffix": ".local"
+    },
+       {
+      "kitId": "kit4",
+      "kitName": "LW-AMGF1 VG Kit 4",
+      "vgStart": 1,
+      "count": 25,
+      "hostPrefix": "vg-",
+      "hostSuffix": ".local"
+    },
+       {
+      "kitId": "kit5",
+      "kitName": "LW-AMGF1 VG Kit 5",
+      "vgStart": 1,
+      "count": 25,
+      "hostPrefix": "vg-",
+      "hostSuffix": ".local"
+    },
+       {
+      "kitId": "kit6",
+      "kitName": "LW-AMGF1 VG Kit 6",
+      "vgStart": 1,
+      "count": 25,
+      "hostPrefix": "vg-",
+      "hostSuffix": ".local"
+    }
+  ]
+}

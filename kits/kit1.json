@@ -1,0 +1,16 @@
+{
+    "kitId": "kit1",
+    "displayName": "LW-AMGF1 VG Kit 1",
+    "devices": [
+        {
+            "id": "kit1-kilo01",
+            "name": "LW-AMGF1-VG-Kit1-Kilo01",
+            "base": "http://vg-01.local"
+        },
+        {
+            "id": "kit1-kilo02",
+            "name": "LW-AMGF1-VG-Kit1-Kilo02",
+            "base": "http://vg-02.local"
+        }
+    ]
+}
