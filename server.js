@@ -1,4 +1,5 @@
 import http from "http";
+import { WebSocketServer, WebSocket } from "ws";
 import fs from "fs";
 import express from "express";
 import { constants } from "crypto";
@@ -266,8 +267,136 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-http.createServer(app).listen(PORT, "0.0.0.0", () => {
-  console.log(`HTTPS server listening on http://0.0.0.0:${PORT}`);
+
+// =============================
+// HTTP server + WebSocket (/td)
+// =============================
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: "/td" });
+
+// TD “bridge” socket (first TD client that says td.hello)
+let tdSocket = null;
+
+// Optional UI sockets (browser UIs)
+const uiSockets = new Set();
+
+function isOpen(ws) {
+  return ws && ws.readyState === WebSocket.OPEN;
+}
+
+function safeSend(ws, obj) {
+  if (!isOpen(ws)) return false;
+  ws.send(JSON.stringify(obj));
+  return true;
+}
+
+function broadcastToUI(obj) {
+  const msg = JSON.stringify(obj);
+  for (const ws of uiSockets) {
+    if (isOpen(ws)) ws.send(msg);
+  }
+}
+
+function setTdSocket(ws) {
+  // If an old TD socket is hanging around, kill it
+  if (tdSocket && tdSocket !== ws) {
+    try { tdSocket.terminate(); } catch {}
+  }
+  tdSocket = ws;
+  broadcastToUI({ type: "td.status", connected: true });
+}
+
+function clearTdSocket(ws) {
+  if (ws === tdSocket) {
+    tdSocket = null;
+    broadcastToUI({ type: "td.status", connected: false });
+  }
+}
+
+wss.on("connection", (ws) => {
+  ws.isAlive = true;
+
+  ws.on("pong", () => {
+    ws.isAlive = true;
+  });
+
+  ws.on("message", (buf) => {
+    let msg;
+    try {
+      msg = JSON.parse(buf.toString("utf8"));
+    } catch {
+      safeSend(ws, { type: "error", msg: "Invalid JSON" });
+      return;
+    }
+
+    // Identify TD
+    if (msg?.type === "td.hello") {
+      ws.isTD = true;
+      uiSockets.delete(ws);
+      setTdSocket(ws);
+      safeSend(ws, { type: "td.ack" });
+      return;
+    }
+
+    // Identify UI
+    if (msg?.type === "ui.hello") {
+      ws.isUI = true;
+      uiSockets.add(ws);
+      safeSend(ws, { type: "ui.ack", tdConnected: isOpen(tdSocket) });
+      return;
+    }
+
+    // TD -> UI passthrough
+    if (ws === tdSocket) {
+      broadcastToUI({ type: "td.event", payload: msg });
+      return;
+    }
+
+    // UI -> TD forwarding
+    if (!isOpen(tdSocket)) {
+      safeSend(ws, { type: "error", msg: "TD not connected" });
+      return;
+    }
+
+    safeSend(tdSocket, { type: "ui.toTd", payload: msg });
+
+    // Optional: ack to the UI sender
+    safeSend(ws, { type: "ok" });
+  });
+
+  ws.on("close", () => {
+    uiSockets.delete(ws);
+    clearTdSocket(ws);
+  });
+
+  ws.on("error", () => {
+    uiSockets.delete(ws);
+    clearTdSocket(ws);
+  });
+});
+
+// Heartbeat: ping UIs AND TD to avoid stale "connected" state
+setInterval(() => {
+  const all = [...uiSockets];
+
+  for (const ws of all) {
+    if (!ws) continue;
+
+    if (ws.isAlive === false) {
+      uiSockets.delete(ws);
+      clearTdSocket(ws);
+      try { ws.terminate(); } catch {}
+      continue;
+    }
+
+    ws.isAlive = false;
+    try { ws.ping(); } catch {}
+  }
+}, 15000);
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`HTTP server listening on http://0.0.0.0:${PORT}`);
+  console.log(`WebSocket endpoint: ws://0.0.0.0:${PORT}/td`);
   console.log(`Loaded generate spec: ${GENERATE_PATH}`);
   console.log(`Active kit: ${getActiveKitId()}`);
 });

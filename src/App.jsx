@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 function safeJsonParse(text) {
   try {
@@ -47,6 +47,122 @@ export default function App() {
   const [presetsById, setPresetsById] = useState({});
   const [messagesById, setMessagesById] = useState({}); // { [id]: string[] }
   const [busyById, setBusyById] = useState({}); // { [id]: {current?:bool,presets?:bool,reboot?:bool} }
+
+
+// ----------------------------
+// WebSocket: TouchDesigner table snapshot + editable grid (global)
+// ----------------------------
+const wsRef = useRef(null);
+const [tdWsConnected, setTdWsConnected] = useState(false);
+const [tdConnected, setTdConnected] = useState(false);
+const [tablePath, setTablePath] = useState("/project1/web_vars");
+const [tableRows, setTableRows] = useState([]);
+const [tdLog, setTdLog] = useState([]);
+
+function tdMsg(text) {
+  setTdLog((prev) => [text, ...prev].slice(0, 80));
+}
+
+function getWsUrl() {
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  const host = import.meta.env.VITE_API_HOST || window.location.host;
+  return `${proto}://${host}/td`;
+}
+
+function wsSend(obj) {
+  const ws = wsRef.current;
+  if (!ws || ws.readyState !== 1) return false;
+  ws.send(JSON.stringify(obj));
+  return true;
+}
+
+function requestSnapshot(pathOverride) {
+  const t = pathOverride ?? tablePath;
+  const ok = wsSend({ type: "get_table", table: t });
+  if (!ok) tdMsg("WS not connected (cannot request snapshot)");
+}
+
+function updateCell(r, c, value) {
+  // Optimistic update
+  setTableRows((prev) => {
+    const next = prev.map((row) => row.slice());
+    while (next.length <= r) next.push([]);
+    while (next[r].length <= c) next[r].push("");
+    next[r][c] = value;
+    return next;
+  });
+
+  const ok = wsSend({ type: "set_cell", table: tablePath, row: r, col: c, value });
+  if (!ok) tdMsg("WS not connected (cannot send set_cell)");
+}
+
+useEffect(() => {
+  const url = getWsUrl();
+  tdMsg(`WS: connecting to ${url}`);
+
+  const ws = new WebSocket(url);
+  wsRef.current = ws;
+
+  ws.onopen = () => {
+    setTdWsConnected(true);
+    tdMsg("WS: connected");
+    ws.send(JSON.stringify({ type: "ui.hello" }));
+    ws.send(JSON.stringify({ type: "get_table", table: tablePath }));
+  };
+
+  ws.onmessage = (ev) => {
+    let msg;
+    try {
+      msg = JSON.parse(ev.data);
+    } catch {
+      return;
+    }
+
+    if (msg?.type === "ui.ack") {
+  setTdConnected(!!msg.tdConnected);
+  tdMsg(`TD: ${msg.tdConnected ? "connected" : "not connected"} (from ui.ack)`);
+  return;
+}
+
+
+    // Unwrap relay: {type:"td.event", payload:{...}}
+    const p = msg?.type === "td.event" ? msg.payload : msg;
+
+    if (msg?.type === "td.status") {
+      setTdConnected(!!msg.connected);
+      tdMsg(`TD: ${msg.connected ? "connected" : "disconnected"}`);
+      return;
+    }
+
+    if (p?.type === "table_snapshot" && Array.isArray(p.rows)) {
+      setTableRows(p.rows);
+      tdMsg(`TD: snapshot received (${p.rows.length} rows)`);
+      return;
+    }
+
+    if (p?.type === "td.ack" || msg?.type === "ui.ack" || msg?.type === "ok") return;
+
+    if (msg?.type === "error") {
+      tdMsg(`WS error: ${msg.msg}`);
+      return;
+    }
+  };
+
+  ws.onclose = () => {
+    setTdWsConnected(false);
+    setTdConnected(false);
+    tdMsg("WS: disconnected");
+  };
+
+  ws.onerror = () => {
+    tdMsg("WS: error (check devtools console)");
+  };
+
+  return () => {
+    try { ws.close(); } catch {}
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
 
   const devices = useMemo(() => kit?.devices || [], [kit]);
 
@@ -202,6 +318,18 @@ export default function App() {
     }
   }
 
+  function scrollByAmount(delta) {
+  window.scrollBy({ top: delta, left: 0, behavior: "smooth" });
+}
+
+function scrollToTop() {
+  window.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+}
+
+function scrollToBottom() {
+  window.scrollTo({ top: document.documentElement.scrollHeight, left: 0, behavior: "smooth" });
+}
+
   useEffect(() => {
     (async () => {
       await checkServerConnection();
@@ -209,6 +337,8 @@ export default function App() {
       await loadActiveKit();
     })();
   }, []);
+
+  
 
   function DeviceAccordion({ d }) {
     const isOpen = d.id === openId;
@@ -507,11 +637,135 @@ export default function App() {
           </div>
         </div>
 
+
+{/* =========================
+    TouchDesigner Table
+   ========================= */}
+<div className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
+  <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex items-center gap-3">
+      <div className="font-semibold">TD Table Control</div>
+
+      <span className={`text-xs px-2 py-1 rounded-full border ${tdWsConnected ? "border-emerald-800 text-emerald-300 bg-emerald-950/40" : "border-rose-800 text-rose-300 bg-rose-950/40"}`}>
+        WS {tdWsConnected ? "connected" : "offline"}
+      </span>
+
+      <span className={`text-xs px-2 py-1 rounded-full border ${tdConnected ? "border-emerald-800 text-emerald-300 bg-emerald-950/40" : "border-slate-700 text-slate-300 bg-slate-950/40"}`}>
+        TD {tdConnected ? "connected" : "not connected"}
+      </span>
+    </div>
+
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        className="bg-slate-950/40 border border-slate-700 text-slate-100 rounded-md px-2 py-2 text-sm w-72"
+        value={tablePath}
+        onChange={(e) => setTablePath(e.target.value)}
+        placeholder="/project1/web_vars"
+      />
+
+      <button
+        onClick={() => requestSnapshot()}
+        disabled={!tdWsConnected}
+        className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm"
+      >
+        Refresh snapshot
+      </button>
+    </div>
+  </div>
+
+  <div className="mt-2 text-xs text-slate-400">
+    Editing a cell sends <span className="text-slate-200">set_cell</span> to TD immediately.
+  </div>
+
+  <div className="mt-3 overflow-auto border border-slate-800 rounded-xl bg-slate-950/30">
+    <table className="w-full text-sm">
+      <tbody>
+        {tableRows.length === 0 ? (
+          <tr>
+            <td className="p-3 text-slate-400">
+              No snapshot yet (or table is empty). Click “Refresh snapshot”.
+            </td>
+          </tr>
+        ) : (
+          tableRows.map((row, r) => (
+            <tr key={r} className="border-b border-slate-800">
+              {row.map((cell, c) => (
+                <td key={c} className="border-r border-slate-800 min-w-[140px]">
+                  <input
+                    className="w-full bg-slate-950/50 text-slate-100 px-2 py-2 outline-none"
+                    value={cell ?? ""}
+                    onChange={(e) => updateCell(r, c, e.target.value)}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+  </div>
+</div>
+
         {/* Accordions */}
         {filteredDevices.map((d) => (
           <DeviceAccordion key={d.id} d={d} />
         ))}
       </div>
+      {/* Dev: touch scroll controls */}
+<div className="fixed bottom-4 right-4 z-50">
+  <div className="rounded-2xl border border-slate-700 bg-slate-900/80 backdrop-blur p-2 shadow-lg">
+    <div className="grid grid-cols-2 gap-2">
+      <button
+        className="px-4 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold"
+        onClick={() => scrollByAmount(-240)}
+        title="Scroll up"
+      >
+        ▲ Up
+      </button>
+      <button
+        className="px-4 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-sm font-semibold"
+        onClick={() => scrollByAmount(240)}
+        title="Scroll down"
+      >
+        ▼ Down
+      </button>
+      <button
+        className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm"
+        onClick={scrollToTop}
+        title="Top"
+      >
+        ⇈ Top
+      </button>
+      <button
+        className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm"
+        onClick={scrollToBottom}
+        title="Bottom"
+      >
+        ⇊ Bottom
+      </button>
+    </div>
+
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      <button
+        className="px-4 py-3 rounded-xl bg-slate-950/40 hover:bg-slate-800 text-sm"
+        onClick={() => scrollByAmount(-window.innerHeight * 0.8)}
+        title="Page up"
+      >
+        Page ↑
+      </button>
+      <button
+        className="px-4 py-3 rounded-xl bg-slate-950/40 hover:bg-slate-800 text-sm"
+        onClick={() => scrollByAmount(window.innerHeight * 0.8)}
+        title="Page down"
+      >
+        Page ↓
+      </button>
+    </div>
+  </div>
+</div>
+
     </div>
   );
 }
+
+
