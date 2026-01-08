@@ -268,16 +268,16 @@ if (fs.existsSync(distPath)) {
 }
 
 
-// =============================
-// HTTP server + WebSocket (/td)
-// =============================
+
+// HTTP server + WebSocket 
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/td" });
 
-// TD “bridge” socket (first TD client that says td.hello)
+
 let tdSocket = null;
 
-// Optional UI sockets (browser UIs)
+
 const uiSockets = new Set();
 
 function isOpen(ws) {
@@ -298,7 +298,7 @@ function broadcastToUI(obj) {
 }
 
 function setTdSocket(ws) {
-  // If an old TD socket is hanging around, kill it
+ 
   if (tdSocket && tdSocket !== ws) {
     try { tdSocket.terminate(); } catch {}
   }
@@ -360,7 +360,7 @@ wss.on("connection", (ws) => {
 
     safeSend(tdSocket, { type: "ui.toTd", payload: msg });
 
-    // Optional: ack to the UI sender
+    
     safeSend(ws, { type: "ok" });
   });
 

@@ -45,19 +45,27 @@ export default function App() {
   // Per-device caches
   const [currentById, setCurrentById] = useState({});
   const [presetsById, setPresetsById] = useState({});
-  const [messagesById, setMessagesById] = useState({}); // { [id]: string[] }
-  const [busyById, setBusyById] = useState({}); // { [id]: {current?:bool,presets?:bool,reboot?:bool} }
+  const [messagesById, setMessagesById] = useState({}); 
+  const [busyById, setBusyById] = useState({}); 
 
 
-// ----------------------------
-// WebSocket: TouchDesigner table snapshot + editable grid (global)
-// ----------------------------
+
+// WebSocket: TouchDesigner table snapshot + editable grid 
+
 const wsRef = useRef(null);
 const [tdWsConnected, setTdWsConnected] = useState(false);
 const [tdConnected, setTdConnected] = useState(false);
-const [tablePath, setTablePath] = useState("/project1/web_vars");
 const [tableRows, setTableRows] = useState([]);
 const [tdLog, setTdLog] = useState([]);
+const TD_TABLES = [
+  { key: "global" , label: "GlobalSettings" , path: "/project1/GlobalSettings"},
+  { key: "PC" , label: "PCSettings" , path: "/project1/PCSettings" },
+  { key: "Override" , label: "OverrideSettings" , path: "/project1/OverrideLocalSettings" },
+  { key: "Shared" , label: "SharedSettings" , path: "/project1/SharedUserSettings"} 
+];
+
+const [selectedTableKey, setSeclectedTableKey] = useState("global");
+const [tablePath, setTablePath] =useState("/project1/GlobalSettings"); 
 
 function tdMsg(text) {
   setTdLog((prev) => [text, ...prev].slice(0, 80));
@@ -65,9 +73,9 @@ function tdMsg(text) {
 
 function getWsUrl() {
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  const host = import.meta.env.VITE_API_HOST || window.location.host;
-  return `${proto}://${host}/td`;
+  return `${proto}://${window.location.host}/td`;
 }
+
 
 function wsSend(obj) {
   const ws = wsRef.current;
@@ -80,6 +88,13 @@ function requestSnapshot(pathOverride) {
   const t = pathOverride ?? tablePath;
   const ok = wsSend({ type: "get_table", table: t });
   if (!ok) tdMsg("WS not connected (cannot request snapshot)");
+}
+
+function selectTable(t) {
+  setSeclectedTableKey(t.key);
+  setTablePath(t.path);
+  setTableRows([]);
+  requestSnapshot(t.path);
 }
 
 function updateCell(r, c, value) {
@@ -125,7 +140,7 @@ useEffect(() => {
 }
 
 
-    // Unwrap relay: {type:"td.event", payload:{...}}
+   
     const p = msg?.type === "td.event" ? msg.payload : msg;
 
     if (msg?.type === "td.status") {
@@ -637,10 +652,7 @@ function scrollToBottom() {
           </div>
         </div>
 
-
-{/* =========================
-    TouchDesigner Table
-   ========================= */}
+{/* TD TAble */}
 <div className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4">
   <div className="flex flex-wrap items-center justify-between gap-3">
     <div className="flex items-center gap-3">
@@ -656,12 +668,29 @@ function scrollToBottom() {
     </div>
 
     <div className="flex flex-wrap items-center gap-2">
-      <input
-        className="bg-slate-950/40 border border-slate-700 text-slate-100 rounded-md px-2 py-2 text-sm w-72"
-        value={tablePath}
-        onChange={(e) => setTablePath(e.target.value)}
-        placeholder="/project1/web_vars"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+  {TD_TABLES.map((t) => {
+    const active = selectedTableKey === t.key;
+    return (
+      <button
+        key={t.key}
+        onClick={() => selectTable(t)}
+        disabled={!tdWsConnected}
+        className={[
+          "px-3 py-2 rounded-lg text-sm border",
+          active
+            ? "bg-emerald-950/40 border-emerald-800 text-emerald-200"
+            : "bg-slate-800/40 border-slate-700 text-slate-200 hover:bg-slate-700/40",
+          !tdWsConnected ? "opacity-50" : "",
+        ].join(" ")}
+        title={t.path}
+      >
+        {t.label}
+      </button>
+    );
+  })}
+</div>
+
 
       <button
         onClick={() => requestSnapshot()}
@@ -711,7 +740,7 @@ function scrollToBottom() {
           <DeviceAccordion key={d.id} d={d} />
         ))}
       </div>
-      {/* Dev: touch scroll controls */}
+      {/* touch scroll controls */}
 <div className="fixed bottom-4 right-4 z-50">
   <div className="rounded-2xl border border-slate-700 bg-slate-900/80 backdrop-blur p-2 shadow-lg">
     <div className="grid grid-cols-2 gap-2">

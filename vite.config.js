@@ -7,23 +7,23 @@ export default defineConfig({
   server: {
     proxy: {
       "/health": {
-        target: "http://10.0.20.35:9980",
+        target: "http://10.0.30.55:9980",
         changeOrigin: true,
         secure: false,
       },
       "/kiloview": {
-        target: "http://10.0.20.35:9980",
+        target: "http://10.0.30.55:9980",
         changeOrigin: true,
         secure: false,
       },
       "/api": {
-        target: "http://10.0.20.35:9980",
+        target: "http://10.0.30.55:9980",
         changeOrigin: true,
         secure: false,
       },
       "/td": {
-        target: "http://localhost:9980",
-        
+        target: "http://10.0.30.55:9980",
+        ws: true,
         changeOrigin: true,
       },
     },
